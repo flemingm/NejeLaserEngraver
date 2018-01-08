@@ -29,9 +29,10 @@ class SerialHandler : NSObject, ORSSerialPortDelegate {
     
     func getUSBSerialDevices() -> [String] {
         var portIterator: io_iterator_t = 0
-        let kernResult = findSerialDevices(deviceType: kIOSerialBSDAllTypes, serialPortIterator: &portIterator)
+     //   let kernResult = findSerialDevices(deviceType: kIOSerialBSDAllTypes, serialPortIterator: &portIterator)
+        let kernResult = findSerialDevices(deviceType: kIOSerialBSDRS232Type, serialPortIterator: &portIterator)
+        
         if kernResult == KERN_SUCCESS {
-            
             return getSerialPaths(portIterator: portIterator)
         }
         
@@ -40,14 +41,15 @@ class SerialHandler : NSObject, ORSSerialPortDelegate {
     
     func findSerialDevices(deviceType: String,  serialPortIterator: inout io_iterator_t ) -> kern_return_t {
         var result: kern_return_t = KERN_FAILURE
-        if let classesToMatch = IOServiceMatching(kIOSerialBSDServiceValue) {
-            if var classesToMatchDict = (classesToMatch as NSMutableDictionary) as NSDictionary as? [String: Any] {
-                classesToMatchDict[kIOSerialBSDTypeKey] = deviceType
-                let classesToMatchCFDictRef = (classesToMatchDict as NSDictionary) as CFDictionary
-                result = IOServiceGetMatchingServices(kIOMasterPortDefault, classesToMatchCFDictRef, &serialPortIterator);
-                return result
-            }
+        
+        let classesToMatch = IOServiceMatching(kIOSerialBSDServiceValue)
+        if var classesToMatchDict = (classesToMatch as! NSMutableDictionary) as NSDictionary as? [String: Any] {
+            classesToMatchDict[kIOSerialBSDTypeKey] = deviceType
+            let classesToMatchCFDictRef = (classesToMatchDict as NSDictionary) as CFDictionary
+            result = IOServiceGetMatchingServices(kIOMasterPortDefault, classesToMatchCFDictRef, &serialPortIterator);
+            return result
         }
+        
         return KERN_FAILURE
     }
     
@@ -76,12 +78,14 @@ class SerialHandler : NSObject, ORSSerialPortDelegate {
             serialPort = ORSSerialPort(path:"")
             isOpen = true
         } else {
+            print( "serial Opening - \(device)")
             self.serialPort = ORSSerialPort(path: device) // please adjust to your handle
             self.serialPort?.delegate = self
             self.serialPort?.baudRate = 57600
             self.serialPort?.rts = true
             self.serialPort?.dtr = true
             serialPort?.open()
+            
         }
     }
     
@@ -94,6 +98,7 @@ class SerialHandler : NSObject, ORSSerialPortDelegate {
         if !isOpen && !testMode { return }
         
         let string = command.lowercased()
+        print( "send - \(string)")
         
         var b : [UInt8]?
         if string == "close" {
@@ -144,6 +149,8 @@ class SerialHandler : NSObject, ORSSerialPortDelegate {
                 
                 DispatchQueue.global().asyncAfter(deadline: .now() + 3 , execute: { [weak self] in
                     guard let `self` = self else { return }
+                    
+                    
                     // Now upload image (BMP Monochrome format)
                     let data = Data(bytes:Utils.createMonoBitmap(pixels: pixels))
                     self.sendData(data:data)
@@ -153,6 +160,8 @@ class SerialHandler : NSObject, ORSSerialPortDelegate {
                     }
                 })
             }
+            return
+            
         } else if string.hasPrefix( "move" ) {
             if string.hasSuffix("origin") {
                 b = [0xF3]
@@ -168,8 +177,9 @@ class SerialHandler : NSObject, ORSSerialPortDelegate {
         }
 
         if let b = b {
+            print("sendData  (\(b))")
             let data = Data(bytes: b)
-            sendData(data:data)
+            self.sendData(data:data)
         }
     }
     
@@ -182,6 +192,7 @@ class SerialHandler : NSObject, ORSSerialPortDelegate {
     // ORSSerialPortDelegate
     
     func serialPort(_ serialPort: ORSSerialPort, didReceive data: Data) {
+         print("Serial didReceive data")
         readPrintDataCallback?( data )
     }
     
